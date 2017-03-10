@@ -23,9 +23,9 @@ class BaseFlow(object):
         cls_name = self.__class__.__name__
         if hasattr(self, "obj"):
             obj_name = self.obj.__name__
-            self._defs = self._ns.get_obj_flow_definition(obj_name,
+            self._defs = self.obj._ns.get_obj_flow_definition(obj_name,
                                                               cls_name)
-            self.to_str = "%s.objects.%s.flows.%s" % (self._ns.ns_name,
+            self.to_str = "%s.objects.%s.flows.%s" % (self.obj._ns.ns_name,
                                                       obj_name,
                                                       cls_name)
         else:
@@ -115,7 +115,10 @@ class BaseFlow(object):
             ns, atom_name = atom_fqdn.split(".atoms.")
             ns, obj_name = ns.split(".objects.")
 
-            runnable_atom = self._ns.get_atom(obj_name, atom_name)
+            if hasattr(self, "obj"):
+                runnable_atom = self.obj._ns.get_atom(obj_name, atom_name)
+            else:
+                runnable_atom = self._ns.get_atom(obj_name, atom_name)
             try:
                 ret_val = runnable_atom(
                     parameters=self.parameters
