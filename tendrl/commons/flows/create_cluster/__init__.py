@@ -9,6 +9,7 @@ from tendrl.commons.objects.job import Job
 
 from tendrl.commons import flows
 from tendrl.commons.flows.create_cluster import ceph_help
+from tendrl.commons.flows.import_cluster.ceph_help import import_ceph
 
 LOG = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class CreateCluster(flows.BaseFlow):
                     new_params = self.parameters.copy()
                     new_params['Node[]'] = [node]
                     new_params['ssh_setup_script'] = ssh_setup_script
-                # create same flow for each node in node list except $this
+                    # create same flow for each node in node list except $this
                     payload = {"integration_id": integration_id,
                                "node_ids": [node],
                                "run": "tendrl.flows.SetupSsh",
@@ -60,6 +61,22 @@ class CreateCluster(flows.BaseFlow):
 
         # SSH setup jobs finished above, now install ceph
         ceph_help.create_ceph(self.parameters)
+
+        # Start jobs for importing cluster
+        node_list.remove(NS.node_context.node_id)
+        new_params = self.parameters.copy()
+        new_params['Node[]'] = node_list
+        payload = {"integration_id": integration_id,
+                   "node_ids": node_list,
+                   "run": "tendrl.flows.ImportCluster",
+                   "status": "new",
+                   "parameters": new_params,
+                   "parent": self.parameters['job_id'],
+                   "type": "node"
+                  }
+        Job(job_id=str(uuid.uuid4()),
+            status="new",
+            payload=json.dumps(payload)).save()
 
     def load_definition(self):
         self._defs = {"help": "Create Cluster",
