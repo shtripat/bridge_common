@@ -103,13 +103,12 @@ def create_mons(parameters, mon_ips):
     plugin = NS.ceph_provisioner.get_plugin()
     for mon_ip in mon_ips:
         task_id = plugin.configure_mon(mon_ip,
-                                           parameters['TendrlContext.cluster_id'],
-                                           parameters["TendrlContext.cluster_name"],
-                                           mon_ip,
-                                           parameters["Cluster.cluster_network"],
-                                           parameters["Cluster.public_network"],
-                                           created_mons
-                                           )
+                                       parameters['TendrlContext.cluster_id'],
+                                       parameters["TendrlContext.cluster_name"],
+                                       mon_ip,
+                                       parameters["Cluster.cluster_network"],
+                                       parameters["Cluster.public_network"],
+                                       created_mons)
         Event(
             Message(
                 job_id=parameters['job_id'],
@@ -146,14 +145,14 @@ def create_osds(parameters, created_mons):
                 else:
                     devices[device["device"]] = device["journal"]
             task_id = plugin.configure_osd(
-            config["provisioning_ip"],
-            devices,
-            parameters["TendrlContext.cluster_id"],
-            parameters["TendrlContext.cluster_name"],
-            config["journal_size"],
-            parameters["Cluster.cluster_network"],
-            parameters["Cluster.public_network"],
-            created_mons
+                config["provisioning_ip"],
+                devices,
+                parameters["TendrlContext.cluster_id"],
+                parameters["TendrlContext.cluster_name"],
+                config["journal_size"],
+                parameters["Cluster.cluster_network"],
+                parameters["Cluster.public_network"],
+                created_mons
             )
             Event(
                 Message(
