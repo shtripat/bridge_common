@@ -1,14 +1,15 @@
 # flake8: noqa
 
+import etcd
 import json
 import uuid
 
 from tendrl.commons import flows
 from tendrl.commons.event import Event
 from tendrl.commons.message import Message
-from tendrl.commons.flows import utils
 from tendrl.commons.flows.create_cluster import ceph_help
 from tendrl.commons.flows.create_cluster import gluster_help
+from tendrl.commons.flows.create_cluster import utils as create_cluster_utils
 from tendrl.commons.flows.exceptions import FlowExecutionFailedError
 from tendrl.commons.flows.import_cluster.ceph_help import import_ceph
 from tendrl.commons.flows.import_cluster.gluster_help import import_gluster
@@ -46,9 +47,15 @@ class CreateCluster(flows.BaseFlow):
 
         ssh_job_ids = []
         if "ceph" in sds_name:
-            ssh_job_ids = utils.ceph_create_ssh_setup_jobs(self.parameters)
+            ssh_job_ids = create_cluster_utils.ceph_create_ssh_setup_jobs(
+                self.parameters
+            )
         else:
-            ssh_job_ids = utils.gluster_create_ssh_setup_jobs(self.parameters)
+            create_cluster_utils.install_gdeploy()
+            create_cluster_utils.install_python_gdeploy()
+            ssh_job_ids = create_cluster_utils.gluster_create_ssh_setup_jobs(
+                self.parameters
+            )
 
         all_ssh_jobs_done = False
         while not all_ssh_jobs_done:
@@ -69,6 +76,15 @@ class CreateCluster(flows.BaseFlow):
                 )
 
                 all_ssh_jobs_done = True
+                # set this node as gluster provisioner
+                if "gluster" in self.parameters["TendrlContext.sds_name"]:
+                    tags = ["provisioner/%s" % integration_id]
+                    NS.node_context = NS.node_context.load()
+                    current_tags = json.loads(NS.node_context.tags)
+                    tags += current_tags
+                    NS.node_context.tags = list(set(tags))
+                    NS.node_context.save()
+
 
         # SSH setup jobs finished above, now install sds bits and create cluster
         if "ceph" in sds_name:
@@ -118,9 +134,14 @@ class CreateCluster(flows.BaseFlow):
         new_params['TendrlContext.integration_id'] = integration_id
 
         # Get node context for one of the nodes from list
+        detected_cluster_id = NS.etcd_orm.client.read(
+            "nodes/%s/DetectedCluster/detected_cluster_id" % self.parameters['Node[]'][0]
+        ).value
         sds_pkg_name = NS.etcd_orm.client.read(
             "nodes/%s/DetectedCluster/sds_pkg_name" % self.parameters['Node[]'][0]
         ).value
+        if "gluster" in sds_pkg_name:
+            new_params['gdeploy_provisioned'] = True
         sds_pkg_version = NS.etcd_orm.client.read(
             "nodes/%s/DetectedCluster/sds_pkg_version" % self.parameters['Node[]'][0]
         ).value
@@ -128,7 +149,7 @@ class CreateCluster(flows.BaseFlow):
             sds_pkg_name
         new_params['DetectedCluster.sds_pkg_version'] = \
             sds_pkg_version
-        payload = {"node_ids": self.parameters['Node[]'],
+        payload = {"tags": ["detected_cluster/%s" % detected_cluster_id],
                    "run": "tendrl.flows.ImportCluster",
                    "status": "new",
                    "parameters": new_params,

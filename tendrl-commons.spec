@@ -1,5 +1,5 @@
 Name: tendrl-commons
-Version: 1.2.2
+Version: 1.2.3
 Release: 1%{?dist}
 BuildArch: noarch
 Summary: Common lib for Tendrl sds integrations and node-agent
@@ -7,14 +7,14 @@ Source0: %{name}-%{version}.tar.gz
 License: LGPLv2+
 URL: https://github.com/Tendrl/commons
 
-BuildRequires: ansible >= 2.2
+BuildRequires: ansible = 2.2
 BuildRequires: pytest
 BuildRequires: python2-devel
 BuildRequires: python-mock
 BuildRequires: python-six
 BuildRequires: systemd
 
-Requires: ansible >= 2.2
+Requires: ansible = 2.2
 Requires: python-maps
 Requires: python-dateutil
 Requires: python-dns
@@ -51,6 +51,9 @@ rm -rf %{name}.egg-info
 %license LICENSE
 
 %changelog
+* Tue Apr 18 2017 Rohan Kanade <rkanade@redhat.com> - 1.2.3-1
+- Release tendrl-commons v1.2.3
+
 * Sat Apr 01 2017 Rohan Kanade <rkanade@redhat.com> - 1.2.2-1
 - Release tendrl-commons v1.2.2
 

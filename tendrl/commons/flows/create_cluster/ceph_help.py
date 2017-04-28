@@ -161,7 +161,6 @@ def create_osds(parameters, created_mons):
             wait_for_task(task_id)
 
 def wait_for_task(task_id):
-    status = False
     count = 0
     plugin = NS.ceph_provisioner.get_plugin()
     resp = {}
@@ -172,6 +171,13 @@ def wait_for_task(task_id):
             if resp["ended"]:
                 if resp["succeeded"]:
                     return
+                else:
+                    stderr = resp.get("stderr", "ceph-installer task_id %s failed and did not complete" % task_id)
+                    stdout = resp.get("stdout", "")
+                    raise FlowExecutionFailedError(dict(ceph_installer_task_id=task_id, ceph_installer_task_stdout=stdout,
+                                        ceph_installer_task_stderr=stderr))
+        count = count + 1
     stderr = resp.get("stderr", "ceph-installer task_id %s timed out and did not complete" % task_id)
     stdout = resp.get("stdout", "")
-    raise FlowExecutionFailedError(dict(stdout=stdout, stderr=stderr))
+    raise FlowExecutionFailedError(dict(ceph_installer_task_id=task_id, ceph_installer_task_stdout=stdout,
+                                        ceph_installer_task_stderr=stderr))

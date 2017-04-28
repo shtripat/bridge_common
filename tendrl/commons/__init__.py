@@ -1,5 +1,3 @@
-__version__ = '1.2.2'
-
 import __builtin__
 import importlib
 import inspect

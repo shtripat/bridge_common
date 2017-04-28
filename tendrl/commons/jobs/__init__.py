@@ -8,6 +8,7 @@ import gevent.event
 from tendrl.commons.event import Event
 from tendrl.commons.flows.exceptions import FlowExecutionFailedError
 from tendrl.commons.message import Message, ExceptionMessage
+from tendrl.commons.objects import AtomExecutionFailedError
 from tendrl.commons.objects.job import Job
 
 
@@ -36,11 +37,45 @@ class JobConsumerThread(gevent.greenlet.Greenlet):
                 for job in jobs.leaves:
                     try:
                         jid = job.key.split('/')[-1]
-                        job = Job(job_id=jid).load()
-                        if job.locked_by:
+                        
+                        try:
+                            job_status_key = "/queue/%s/status" % jid
+                            _status = NS.etcd_orm.client.read(job_status_key).value
+                            if _status in ["finished", "processing"]:
+                                continue
+                            _seen_by_key = "/queue/%s/_seen_by_%s" % (jid, NS.node_context.node_id)
+                            NS.etcd_orm.client.read(_seen_by_key)
+                            # Job already seen (could not match) by $this node
                             continue
+                        except etcd.EtcdKeyNotFound:
+                            pass
+                        
+                        try:
+                            _locked_by_key = "/queue/%s/locked_by" % jid
+                            _locked_by = NS.etcd_orm.client.read(_locked_by_key).value
+                            if _locked_by:
+                                # Job already locked by other node
+                                continue
+                        except etcd.EtcdKeyNotFound:
+                            pass
+
+                        job = Job(job_id=jid).load()
                         raw_job = {}
-                        raw_job["payload"] = json.loads(job.payload.decode('utf-8'))
+                        try:
+                            raw_job["payload"] = json.loads(job.payload.decode('utf-8'))
+                        except ValueError as ex:
+                            _msg = "Job (id %s) payload invalid:%s" % (jid, ex.message)
+                            Event(
+                                ExceptionMessage(
+                                    priority="error",
+                                    publisher=NS.publisher_id,
+                                    payload={"message": _msg ,
+                                             "exception": ex
+                                             }
+                                )
+                            )
+                            continue
+
                     except etcd.EtcdKeyNotFound:
                         continue
 
@@ -48,22 +83,50 @@ class JobConsumerThread(gevent.greenlet.Greenlet):
                             job.status == "new":
 
                         # Job routing
+                        
+                        # Flows created by tendrl-api use 'tags' from flow definition to target jobs
+                        _tag_match = False
+                        NS.node_context = NS.node_context.load()
+                        NS.node_context.tags = json.loads(NS.node_context.tags)
                         if raw_job.get("payload", {}).get("tags", []):
-                            NS.node_context = NS.node_context.load()
-                            tags = json.loads(NS.node_context.tags)
-                            if set(tags).isdisjoint(raw_job['payload']['tags']):
-                                continue
+                            for flow_tag in raw_job['payload']['tags']:
+                                if flow_tag in NS.node_context.tags:
+                                    _tag_match = True
 
+                        # Flows created by tendrl backend use 'node_ids' to target jobs
+                        _node_id_match = False
                         if raw_job.get("payload", {}).get("node_ids", []):
-                            if NS.node_context.node_id not in \
+                            if NS.node_context.node_id in \
                                     raw_job['payload']['node_ids']:
-                                continue
+                                _node_id_match = True
+                        
+                        if not _tag_match and not _node_id_match:
+                            _job_node_ids = ", ".join(raw_job.get("payload", 
+                                                                  {}).get("node_ids",
+                                                                          []))
+                            _job_tags = ", ".join(raw_job.get("payload", {}).get("tags", []))
+                            _msg = "Node (%s)(tags: %s) will not process job-%s (node_ids: %s)(tags: %s)" % (NS.node_context.node_id,
+                                                                                                             json.dumps(NS.node_context.tags),
+                                                                                                             jid,
+                                                                                                             _job_node_ids,
+                                                                                                             _job_tags)
+                            Event(
+                                Message(
+                                    priority="info",
+                                    publisher=NS.publisher_id,
+                                    payload={"message": _msg}
+                                )
+                            )
+                            _seen_by_key = "/queue/%s/_seen_by_%s" % (job.job_id, NS.node_context.node_id)
+                            NS.etcd_orm.client.write(_seen_by_key, True)
+                            continue
+
                         job_status_key = "/queue/%s/status" % job.job_id
                         job_lock_key = "/queue/%s/locked_by" % job.job_id
                         try:
                             lock_info = dict(node_id=NS.node_context.node_id, fqdn=NS.node_context.fqdn,
                                              tags=NS.node_context.tags)
-                            NS.etcd_orm.client.write(job_lock_key, json.dumps(lock_info), prevValue="")
+                            NS.etcd_orm.client.write(job_lock_key, json.dumps(lock_info))
                             NS.etcd_orm.client.write(job_status_key, "processing", prevValue="new")
                         except etcd.EtcdCompareFailed:
                             # job is already being processed by some tendrl agent
@@ -78,6 +141,9 @@ class JobConsumerThread(gevent.greenlet.Greenlet):
                         else:
                             runnable_flow = current_ns.ns.get_flow(flow_name)
                         try:
+                            job = job.load()
+                            job.output = {"_None": "_None"}
+                            job.save()
                             
                             the_flow = runnable_flow(parameters=raw_job['payload']['parameters'],
                                                      job_id=job.job_id)
@@ -122,18 +188,28 @@ class JobConsumerThread(gevent.greenlet.Greenlet):
                                          }
                                 )
                             )
-                        except (FlowExecutionFailedError, Exception) as e:
+                        except (FlowExecutionFailedError, AtomExecutionFailedError,
+                                Exception) as e:
+                            _msg = "Failure in Job %s Flow %s with error: " % (job.job_id,
+                                                                         the_flow.parameters['flow_id'])
                             Event(
                                 ExceptionMessage(
                                     priority="error",
-                                    job_id=job.job_id,
-                                    flow_id = the_flow.parameters['flow_id'],
                                     publisher=NS.publisher_id,
-                                    payload={"message": "error",
+                                    payload={"message": _msg + e.message,
                                              "exception": e
                                              }
                                 )
                             )
+                            Event(
+                                Message(
+                                    job_id=job.job_id,
+                                    flow_id = the_flow.parameters['flow_id'],
+                                    priority="error",
+                                    publisher=NS.publisher_id,
+                                    payload={"message": "Job failed %s: %s" % (e, e.message)}
+                                )
+                            ) 
                             try:
                                 NS.etcd_orm.client.write(job_status_key, "failed", prevValue="processing")
                             except etcd.EtcdCompareFailed:
@@ -147,7 +223,7 @@ class JobConsumerThread(gevent.greenlet.Greenlet):
                     ExceptionMessage(
                         priority="error",
                         publisher=NS.publisher_id,
-                        payload={"message": "Job /queue empty",
+                        payload={"message": "Job /queue failure, error:" + ex.message,
                                  "exception": ex
                                  }
                     )

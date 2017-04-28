@@ -1,4 +1,3 @@
-
 from tendrl.commons.event import Event
 from tendrl.commons.message import Message
 from tendrl.commons.flows.exceptions import FlowExecutionFailedError
@@ -25,7 +24,11 @@ def create_gluster(parameters):
                      }
         )
     )
-    ret_val = plugin.setup_gluster_node(node_ips)
+
+    ret_val = plugin.setup_gluster_node(
+        node_ips,
+        repo=NS.config.data['glusterfs_repo']
+    )
     if ret_val is not True:
         raise FlowExecutionFailedError("Error setting up gluster node")
 
