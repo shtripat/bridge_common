@@ -71,6 +71,24 @@ namespace.tendrl:
       type: Create
       uuid: 2f94a48a-05d7-408c-b400-e27827f4edef
       version: 1
+    AddOsds:
+      tags:
+        - "provisioner/$TendrlContext.sds_name"
+      help: "Expands a cluster with osds"
+      enabled: true
+      inputs:
+        mandatory:
+          - TendrlContext.integration_id
+          - TendrlContext.cluster_id
+          - TendrlContext.cluster_name
+          - Cluster.public_network
+          - Cluster.cluster_network
+          - Cluster.node_configuration
+      run: tendrl.flows.AddOsds
+      type: Create
+      uuid: 2f94a48a-05d7-408c-b400-e27827f4edcd
+      version: 1
+
 
   objects:
     Cluster:

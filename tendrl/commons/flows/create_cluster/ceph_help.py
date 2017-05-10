@@ -1,5 +1,7 @@
 # flake8: noqa
+import etcd
 import gevent
+import json
 
 from tendrl.commons.event import Event
 from tendrl.commons.flows.exceptions import FlowExecutionFailedError
@@ -160,6 +162,40 @@ def create_osds(parameters, created_mons):
             )
 
             wait_for_task(task_id)
+
+            journal_details = {}
+            try:
+                journal_details = json.loads(NS.etcd_orm.client.read(
+                    'nodes/%s/journal_details' % node
+                ).value.decode('utf-8'))
+            except etcd.EtcdKeyNotFound:
+                pass
+
+            if config["journal_colocation"]:
+                for entry in devices:
+                    journal_details[entry] = {
+                        'journal_count': 1,
+                        'ssd': False,
+                        'journal_size': config['journal_size'] * 1024 * 1024
+                    }
+            else:
+                for k, v in devices.iteritems():
+                    journal_disk_name = v
+                    if journal_disk_name in journal_details.keys():
+                        journal_details[journal_disk_name]['journal_count'] += 1
+                        journal_details[journal_disk_name]['ssd'] = True
+                    else:
+                        journal_details[journal_disk_name] = {
+                            'journal_count': 1,
+                            'ssd': False,
+                            'journal_size': config['journal_size'] * 1024 * 1024
+                        }
+
+            NS.etcd_orm.client.write(
+                'nodes/%s/journal_details' % node,
+                json.dumps(journal_details)
+            )
+
 
 def wait_for_task(task_id):
     count = 0
