@@ -1,3 +1,4 @@
+import gevent
 import json
 import subprocess
 
@@ -22,6 +23,7 @@ def import_gluster(parameters):
     elif NS.config.data['package_source_type'] == 'rpm':
         name = "tendrl-gluster-integration"
         _cmd = "systemctl restart %s" % name
+        _enable_cmd = "systemctl enable %s" % name
         ansible_module_path = "packaging/os/yum.py"
         attributes["name"] = name
     else:
@@ -103,4 +105,7 @@ def import_gluster(parameters):
     )
     )
 
+    if NS.config.data['package_source_type'] == 'rpm' and _enable_cmd:
+        subprocess.Popen(_enable_cmd.split())
+        gevent.sleep(2)
     subprocess.Popen(_cmd.split())
