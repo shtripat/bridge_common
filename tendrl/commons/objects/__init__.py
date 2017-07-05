@@ -75,94 +75,27 @@ class BaseObject(object):
 
     def save(self, update=True, ttl=None):
         self.render()
-        if "Message" not in self.__class__.__name__:
-            try:
-                # Generate current in memory object hash
-                self.hash = self._hash()
-                _hash_key = "/{0}/hash".format(self.value)
-                _stored_hash = None
-                try:
-                    _stored_hash = NS._int.client.read(_hash_key).value
-                except (etcd.EtcdConnectionFailed, etcd.EtcdException) as ex:
-                    if type(ex) != etcd.EtcdKeyNotFound:
-                        NS._int.reconnect()
-                        _stored_hash = NS._int.client.read(_hash_key).value
-                if self.hash == _stored_hash:
-                    # No changes in stored object and current object,
-                    # dont save current object to central store
-                    if ttl:
-                        etcd_utils.refresh(self.value, ttl)
-                    return
-            except TypeError:
-                # no hash for this object, save the current hash as is
-                pass
+        key = self.value + "/data"
+        try:
+            NS._int.wclient.write(key, self.json)
+        except (etcd.EtcdConnectionFailed, etcd.EtcdException):
+            NS._int.wreconnect()
+            NS._int.wclient.write(key, self.json)
 
-        if update:
-            current_obj = self.load()
-            for attr, val in vars(self).iteritems():
-                if isinstance(val, (types.FunctionType,
-                                    types.BuiltinFunctionType,
-                                    types.MethodType, types.BuiltinMethodType,
-                                    types.UnboundMethodType)) or \
-                        attr.startswith("_") or attr in ['value', 'list']:
-                    continue
-
-                if val is None and hasattr(current_obj, attr):
-                    # if self.attr is None, use attr value from central
-                    # store (i.e. current_obj.attr)
-                    if getattr(current_obj, attr):
-                        setattr(self, attr, getattr(current_obj, attr))
-
-        self.updated_at = str(time_utils.now())
-        for item in self.render():
-            '''
-                Note: Log messages in this file have try-except
-                blocks to run
-                in the condition when the node_agent has not been
-                started and
-                name spaces are being created.
-            '''
-            try:
-                Event(
-                    Message(
-                        priority="debug",
-                        publisher=NS.publisher_id,
-                        payload={"message": "Writing %s to %s" %
-                                            (item['key'], item['value'])
-                                 }
-                    )
-                )
-            except KeyError:
-                sys.stdout.write("Writing %s to %s" % (item['key'],
-                                                       item['value']))
-            # convert list, dict (json) to python based on definitions
-            _type = self._defs.get("attrs", {}).get(item['name'],
-                                                    {}).get("type")
-            if _type:
-                if _type.lower() in ['json', 'list']:
-                    if item['value']:
-                        try:
-                            item['value'] = json.dumps(item['value'])
-                        except ValueError as ex:
-                            _msg = "Error save() attr %s for object %s" % \
-                                   (item['name'], self.__name__)
-                            Event(
-                                ExceptionMessage(
-                                    priority="debug",
-                                    publisher=NS.publisher_id,
-                                    payload={"message": _msg,
-                                             "exception": ex
-                                             }
-                                )
-                            )
-            try:
-                NS._int.wclient.write(item['key'], item['value'], quorum=True)
-            except (etcd.EtcdConnectionFailed, etcd.EtcdException):
-                NS._int.wreconnect()
-                NS._int.wclient.write(item['key'], item['value'], quorum=True)
-        if ttl:
-            etcd_utils.refresh(self.value, ttl)
-
+    def load(self):
+        self.render()
+        key = self.value + '/data'
+        val_str = NS._int.client.read(key).value
+        loc_dict = json.loads(val_str)
+        for attr_name, attr_val in vars(self).iteritems():
+            if not attr_name.startswith('_') and attr_name != "value":
+                _type = self._defs.get("attrs", {}).get(attr_name, {}).get("type")
+                if _type in ['json', 'list', 'Json', 'List', 'JSON', 'LIST']:
+	            setattr(self, attr_name, json.loads(loc_dict[attr_name]))
+                else:
+                    setattr(self, attr_name, loc_dict[attr_name])
+        return self
+        
     def load_all(self):
         value = '/'.join(self.value.split('/')[:-1])
         try:
@@ -178,93 +111,6 @@ class BaseObject(object):
             self.value = item.key
             ins.append(self.load())
         return ins
-
-    def load(self):
-        if "Message" not in self.__class__.__name__:
-            try:
-                # Generate current in memory object hash
-                self.hash = self._hash()
-                _hash_key = "/{0}/hash".format(self.value)
-                _stored_hash = None
-                try:
-                    _stored_hash = NS._int.client.read(_hash_key).value
-                except (etcd.EtcdConnectionFailed, etcd.EtcdException) as ex:
-                    if type(ex) != etcd.EtcdKeyNotFound:
-                        NS._int.reconnect()
-                        _stored_hash = NS._int.client.read(_hash_key).value
-                if self.hash == _stored_hash:
-                    # No changes in stored object and current object,
-                    # dont save current object to central store
-                    return self
-            except TypeError:
-                # no hash for this object, save the current hash as is
-                pass
-
-        _copy = self._copy_vars()
-
-        for item in _copy.render():
-            try:
-                Event(
-                    Message(
-                        priority="debug",
-                        publisher=NS.publisher_id,
-                        payload={"message": "Reading %s" % item['key']}
-                    )
-                )
-            except KeyError:
-                sys.stdout.write("Reading %s" % item['key'])
-
-            try:
-                etcd_resp = NS._int.client.read(item['key'], quorum=True)
-            except (etcd.EtcdConnectionFailed, etcd.EtcdException) as ex:
-                if type(ex) == etcd.EtcdKeyNotFound:
-                    continue
-                else:
-                    NS._int.reconnect()
-                    etcd_resp = NS._int.client.read(item['key'], quorum=True)
-
-            value = etcd_resp.value
-            if item['dir']:
-                key = item['key'].split('/')[-1]
-                dct = dict(key=value)
-                if hasattr(_copy, item['name']):
-                    dct = getattr(_copy, item['name'])
-                    if type(dct) == dict:
-                        dct[key] = value
-                    else:
-                        setattr(_copy, item['name'], dct)
-                else:
-                    setattr(_copy, item['name'], dct)
-                continue
-
-            # convert list, dict (json) to python based on definitions
-            _type = self._defs.get("attrs", {}).get(item['name'],
-                                                    {}).get("type")
-            if _type:
-                if _type.lower() in ['json', 'list']:
-                    if value:
-                        try:
-                            value = json.loads(value.decode('utf-8'))
-                        except ValueError as ex:
-                            _msg = "Error load() attr %s for object %s" % \
-                                   (item['name'], self.__name__)
-                            Event(
-                                ExceptionMessage(
-                                    priority="debug",
-                                    publisher=NS.publisher_id,
-                                    payload={"message": _msg,
-                                             "exception": ex
-                                             }
-                                )
-                            )
-                    else:
-                        if _type.lower() == "list":
-                            value = list()
-                        if _type.lower() == "json":
-                            value = dict()
-
-            setattr(_copy, item['name'], value)
-        return _copy
 
     def exists(self):
         self.render()
@@ -284,9 +130,6 @@ class BaseObject(object):
         for attr, value in vars(self).iteritems():
             _type = self._defs.get("attrs", {}).get(attr,
                                                     {}).get("type")
-            if _type:
-                _type = _type.lower()
-
             if value is None:
                 value = ""
             if attr.startswith("_") or attr in ['value', 'list']:

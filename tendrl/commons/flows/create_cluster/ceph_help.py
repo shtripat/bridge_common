@@ -70,9 +70,9 @@ def install_packages(parameters):
     mon_ips = []
     osd_ips = []
     for node, config in parameters["Cluster.node_configuration"].iteritems():
-        if "mon" in config["role"].lower():
+        if config["role"] in ["mon", "Mon", "MON"]:
             mon_ips.append(config["provisioning_ip"])
-        elif "osd" in config["role"].lower():
+        elif config["role"] in ["osd", "Osd", "OSD"]:
             osd_ips.append(config["provisioning_ip"])
 
     task_id = plugin.install_mon(mon_ips)
@@ -158,7 +158,7 @@ def create_mons(parameters, mon_ips):
 def create_osds(parameters, created_mons):
     plugin = NS.ceph_provisioner.get_plugin()
     for node, config in parameters["Cluster.node_configuration"].iteritems():
-        if "osd" in config["role"].lower():
+        if config["role"] in ["osd", "Osd", "OSD"]:
             if config["journal_colocation"]:
                 devices = []
             else:
