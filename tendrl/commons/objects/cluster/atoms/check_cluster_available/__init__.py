@@ -14,18 +14,12 @@ class CheckClusterAvailable(objects.BaseAtom):
     def run(self):
         retry_count = 0
         while True:
-            _cluster = None
-            try:
-                _cluster = NS.tendrl.objects.Cluster(
-                    integration_id=self.parameters[
-                        "TendrlContext.integration_id"
-                    ]
-                ).load()
-            except etcd.EtcdKeyNotFound:
-                # pass and continue the time out below
-                pass
-
-            if _cluster and _cluster.is_managed == "yes":
+            _cluster = NS.tendrl.objects.Cluster(
+                integration_id=self.parameters[
+                    "TendrlContext.integration_id"
+                ]
+            ).load()
+            if _cluster.exists() and _cluster.is_managed == "yes":
                 return True
 
             retry_count += 1

@@ -39,9 +39,8 @@ class ImportCluster(objects.BaseAtom):
                         new_params['Node[]'] = [node]
                         # create same flow for each node in node list except
                         #  $this
-                        payload = {"tags": ["tendrl/node_%s" % node],
+                        payload = {"tags": ["tendrl/integration/%s" % integration_id],
                                    "run": "tendrl.flows.ImportCluster",
-                                   "status": "new",
                                    "parameters": new_params,
                                    "parent": self.parameters['job_id'],
                                    "type": "node"

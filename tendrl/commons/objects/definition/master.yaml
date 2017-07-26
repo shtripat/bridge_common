@@ -794,7 +794,7 @@ namespace.tendrl:
       attrs:
         interface:
           help: "network interface name"
-          type: List
+          type: String
         ipv4:
           help: "ipv4 addresses"
           type: List

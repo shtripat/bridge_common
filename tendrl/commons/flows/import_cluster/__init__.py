@@ -27,13 +27,14 @@ class ImportCluster(flows.BaseFlow):
                 # TODO(shtripat) ceph-installer is auto detected and
                 #  provisioner/$integration_id
                 # tag is set , below is not required for ceph
-                current_tags = list(NS.node_context.tags)
+                nc = NS.tendrl.objects.NodeContext().load()
+                current_tags = nc.tags
                 new_tags = ['provisioner/%s' % integration_id]
                 new_tags += current_tags
                 new_tags = list(set(new_tags))
                 if new_tags != current_tags:
-                    NS.node_context.tags = new_tags
-                    NS.node_context.save()
+                    nc.tags = new_tags
+                    nc.save()
 
                 _cluster = NS.tendrl.objects.Cluster(
                     integration_id=NS.tendrl_context.integration_id

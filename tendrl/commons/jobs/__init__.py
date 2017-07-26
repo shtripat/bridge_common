@@ -52,7 +52,7 @@ class JobConsumerThread(gevent.greenlet.Greenlet):
 
 def process_job(job):
     jid = job.key.split('/')[-1]
-    job_status_key = "/queue/%s/status" % jid
+    job_obj = Job(job_id=jid).load()
     job_lock_key = "/queue/%s/locked_by" % jid
     NS.node_context = NS.node_context.load()
     # Check job not already locked by some agent
@@ -65,8 +65,7 @@ def process_job(job):
 
     # Check job not already "finished", or "processing"
     try:
-        _status = NS._int.client.read(job_status_key).value
-        if _status in ["finished", "processing"]:
+        if job_obj.status in ["finished", "processing"]:
             return
     except etcd.EtcdKeyNotFound:
         pass
@@ -94,9 +93,8 @@ def process_job(job):
                 # mark status as "failed" and Job.error =
                 # "Timed out"
                 try:
-                    NS._int.wclient.write(job_status_key,
-                                          "failed",
-                                          prevValue="new")
+                    job_obj.status = "failed"
+                    job_obj.save()
                 except etcd.EtcdCompareFailed:
                     pass
                 else:
@@ -143,7 +141,6 @@ def process_job(job):
             )
             return
 
-        job_status_key = "/queue/%s/status" % job.job_id
         job_lock_key = "/queue/%s/locked_by" % job.job_id
         try:
             lock_info = dict(node_id=NS.node_context.node_id,
@@ -152,8 +149,8 @@ def process_job(job):
                              type=NS.type)
             NS._int.wclient.write(job_lock_key,
                                   json.dumps(lock_info))
-            NS._int.wclient.write(job_status_key, "processing",
-                                  prevValue="new")
+            job.status = "processing"
+            job.save()
         except etcd.EtcdCompareFailed:
             # job is already being processed by some tendrl
             # agent
@@ -197,9 +194,8 @@ def process_job(job):
             )
             the_flow.run()
             try:
-                NS._int.wclient.write(job_status_key,
-                                      "finished",
-                                      prevValue="processing")
+                job.status = "finished"
+                job.save()
             except etcd.EtcdCompareFailed:
                 # This should not happen!
                 _msg = "Cannot mark job as 'finished', " \
@@ -254,9 +250,8 @@ def process_job(job):
                 )
 
             try:
-                NS._int.wclient.write(job_status_key,
-                                      "failed",
-                                      prevValue="processing")
+                job.status = "failed"
+                job.save()
             except etcd.EtcdCompareFailed:
                 # This should not happen!
                 _msg = "Cannot mark job as 'failed', current" \

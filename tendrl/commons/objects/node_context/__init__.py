@@ -25,10 +25,13 @@ class NodeContext(objects.BaseObject):
         self.node_id = node_id or self._get_node_id() or self._create_node_id()
         self.fqdn = fqdn or socket.getfqdn()
 
-        curr_tags = []
+        curr_tags = ''
         try:
-            curr_tags = NS._int.client.read("/nodes/%s/NodeContext/tags" %
-                                            self.node_id).value
+            nc_data = NS._int.client.read(
+                "/nodes/%s/NodeContext/data" %
+                self.node_id
+            ).value
+            curr_tags = json.loads(nc_data)['tags']
         except etcd.EtcdKeyNotFound:
             pass
 
