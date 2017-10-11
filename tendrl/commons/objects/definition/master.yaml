@@ -90,7 +90,6 @@ namespace.tendrl:
         - tendrl.objects.Cluster.atoms.CheckClusterAvailable
         - tendrl.objects.Cluster.atoms.ConfigureMonitoring
         - tendrl.objects.Service.atoms.CheckServiceStatus
-        - tendrl.objects.Cluster.atoms.IntimateImport
       run: tendrl.flows.ImportCluster
       type: Create
       uuid: 2f94a48a-05d7-408c-b400-e27827f4edef
