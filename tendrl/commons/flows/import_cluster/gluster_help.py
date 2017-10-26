@@ -115,6 +115,7 @@ def import_gluster(parameters):
                    "log_level": "DEBUG",
                    "logging_socket_path": "/var/run/tendrl/message.sock",
                    "sync_interval": 180,
+                   "ttl_delta": 600,
                    "tags": [gluster_integration_tag]
                    }
     etcd_ca_cert_file = NS.config.data.get("etcd_ca_cert_file")
