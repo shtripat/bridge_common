@@ -166,11 +166,16 @@ def acquire_node_lock(parameters):
             if p_job_id == lock_owner_job:
                 continue
             else:
-                raise FlowExecutionFailedError("Cannot proceed further, "
-                                               "Node (%s) is already locked "
-                                               "by Job (%s)" % (node,
-                                                                lock_owner_job)
-                                               )
+                job = NS.tendrl.objects.Job(job_id=lock_owner_job).load()
+                if job.status == 'in_progress':
+                    raise FlowExecutionFailedError(
+                        "Cannot proceed further, "
+                        "Node (%s) is already locked "
+                        "by Job (%s)" % (
+                            node,
+                            lock_owner_job
+                        )
+                    )
         except EtcdKeyNotFound:
             # To check what are all the nodes are already locked
             continue
