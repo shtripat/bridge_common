@@ -2,6 +2,7 @@
 namespace.tendrl:
   supported_sds:
    - gluster
+  gluster_get_ver_command: "gluster --version"
   min_reqd_gluster_ver: 3.12.0
   gluster_provisioner: GdeployPlugin
   tags:
